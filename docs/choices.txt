@@ -1,0 +1,391 @@
+
+1. ARCHITECTURE
+
+The application is three-tier. 
+
+The package suncertify.db  contains the back-end classes. The class Data acts as the facade to the back-end tier 
+and implements the DBMain interface as specified in the requirements. 
+
+The package suncertify.remote contains the classes which sit between the GUI and the database.
+
+The DataFacade interface is the interface which exposes business methods to the client and
+contains and encapsulates the DBMain interface. Can be created both as a local object (DataAdapter) or as a remote
+object (RemoteDataFacade). The class which is used to initialize the Rmi Registry (DataRegistry) and the class 
+which is used from the clients to retrieve a remote reference to a RemoteDataFacade instance from the pool 
+(RemoteFacadePool) are also in this package.
+
+The class DataFacadeBridge in suncertify.client contains a reference to a DataFacade. This class
+is used by the GuiController in the suncertify.client package to talk to a DataFacade interface.
+The GuiController is also the entry point to the gui. It initializes and coordinates the classes in the 
+packages suncertify.client and suncertify.client.view
+
+2. BOOTSTRAP
+
+For simplicity, all configuration information is managed in a small gui that opens when the user 
+starts the application.  
+I am assuming the server runs always on the default port (1099).
+I allow the user to specify a different filename to use as a database, and of course the host to connect to
+(if client).
+
+2.1 APPLICATIONRUNNER
+
+In the package suncertify.runner the classes which are used to bootstrap the application can be found. 
+The class suncertify.runner.ApplicationRunner is the application's starting point. The application's 
+main method is in the ApplicationRunner class and it parses the command line argument ("server", "alone" or none).
+
+2.2. RUNNERGUI
+
+The ApplicationRunner opens a RunnerGui instance, which allows the user to specify a file name (if running
+as "server" or "alone" ) or the host it will connect to (if running as a client).
+The RunnerGui checks if the file exists and starts the server or the standalone application. If a client,
+it tries to connect and re-prompts the user if unsuccessful.
+
+
+2.3. PROPERTIESMANAGER
+
+The class suncertify.runner.PropertiesManager is the access point for managing the properties that can be defined in 
+the application. There are two of these properties : filename, hostname. These are read from and
+saved into a Properties file, suncertify.properties. For simplicity, all fields and methods in this class are static.
+I don't create instances of this class.
+
+
+2.4. RUNNING AS SERVER
+
+The Bootstrapping Gui does not close if you run the application as a server. The RuiGunner implements 
+the DataRegistryObserver interface, so that it can react to event coming from the DataRegistry. It will
+print out server messages in a text area.
+The user can shut down the server closing the RuiGunner or clicking on the "Stop" button. Before exiting,
+the DataRegistry will make sure all locks are released.
+
+2.5. RUNNING AS CLIENT OR STANDALONE
+
+If the properties are set correctly, an instance of DataFacadeBridge and one of GuiController will be created. 
+These will drive the user interaction as described in chapter 6.
+
+3.  COMMON CLASSES
+
+The package suncertify.common contains data transfer objects, interfaces, utility classes and
+validation classes that are used in several points in the application.
+
+3.1.  RECORD
+
+The class Record in the package suncertify.common is a wrapper around the String[]
+instances which are used by the DBMain methods and represents a occupancy. 
+Using a wrapper is a simple way to remember and manage the relevant
+information associated with a occupancy. 
+The class Record contains
+- the actual occupancy information
+- the position of the record in the file  
+- a deleted flag
+- some convenience methods to retrieve the field contents.
+- The method " boolean matches(String[] criteria)" to compare a record  with search criteria
+
+3.2. UTILS AND APPLICATIONUTILS
+
+Some utility, static methods in these classes. Utils for very generic utility methods, which I may need outside
+of this project. ApplicationUtils contains method which are very specific to the application
+
+3.3. VALIDATORS
+
+Validation is performed at different stages, when reading the file or when accepting user information.
+The validation classes in suncertify.common help with this task.
+
+4.  BACK END
+
+The class Data is the back end's backbone. There are several instances of Data, one for each client. This is
+the easiest way I found out to be able to tell whether a record has been locked by the current Data instance or not 
+-  I just associate a record with a locker (a Data instance).
+The RMI middleware enforces the one client / one Data instance policy.
+When in local mode, there is only one instance of Data. 
+
+4.1. DBMAIN / DATA
+
+The interface DBMain is the interface which is a facade to the methods used to interact
+with the database files. There is one implementation of it, Data. 
+DBMain works with String[] instances. Every String[] instance is a record from
+the datbase file ( db-1x3.db is default) . 
+
+The class Data contains singleton instances of LockManager and RecordManager.
+
+4.2. DATA METHODS
+
+The Data class contains the methods read, update, create, find, delete.
+Of these methods , only "create" does lock or unlock a record. Otherwise, 
+lock / unlock methods in the Data class are called by the DataFacade, the wrapper around Data.
+The lock / unlock / isLocked methods delegate to the LockManager, delete / update / read 
+delegate record access to the class RecordManager.
+ 
+Update and delete will throw an exception if you are trying to perform the operation
+on a record which is not locked. This guarantees consistency, while delegating the responsibility
+of locking records to the wrapper class.
+
+The create method is synchronized on the Data class, so that only one thread 
+is allowed to try and create a new record at any given time. This hurts performance a little, but 
+makes enforcing data consistency easier.
+The Data object will lock the record at the position returned 
+by the method getNextAvailableRecordNo in RecordManager, 
+update it with the new occupancy data, and unlock the record.
+
+
+
+4.3. LOCKMANAGER
+ 
+LockManager helps implement the lock , unlock and isLocked methods in the Data
+class. Internally, in lock manager, that happens through a Map, called lockMap.
+The Map instance maps an Integer (the record number) to the Data 
+object which is holding the abstract lock (locker), if there is any.
+
+
+The method lock(int recNo, Object source) in LockManager tries to get a lock for an
+record. If already locked, it will wait and try to get the lock after a while or after a notification. 
+It will not get out of the method until the source object ( a Data instance) has got a lock to the 
+record. 
+The method unlock(int recNo, Object source) will unlock the record if the source object (a Data instance) is holding
+a lock to it. 
+The synchronization on the methods "tryToLockEntry" and "tryToUnlockEntry" ensure consistency.
+
+This implementation allows some degree of concurrency, since several Data objects can get a lock to different
+records at the same time. There might be problems if a client for any reason does not release a lock,
+which should not happen since the RemoteDataFacade which encapsulate the locker calls the method 
+"removeLocksFor", passing its Data object as parameter, when released or unreferenced. 
+
+A Data instance should never be holding more than one lock at any given time.
+
+4.4.  RECORDMANAGER
+
+The actual communication with the file is through the suncertify.db.RecordManager class.
+
+Since it is a singleton, only one of this will exist at any time. Its methods are synchronized, which is the simplest 
+way to ensure data integrity on the file. 
+To improve performance , RecordManager contains two caches. One cache (recordCache) contains the records 
+which are read from the file, and is implemented as a HashMap (recordNo --> Record).
+
+The method getRecord(int recNo) first tries to get data from the recordCache,
+if none is found it tries to get one from the file and puts the record into the cache.
+
+The method putRecord(int recNo, Record record) persists the data both into the file and
+into the recordCache. 
+
+The method getMaxRecords retrieves the number of records in the file.
+
+There is also a list of the currently deleted records , deletedRecords, which is used by the method 
+ getNextAvailableRecordNo(),  which will return the first available record number where we can put 
+ a newly created Record into. The list is updated after every write operation.
+
+RecordManager contains a reference to a FileManager instance, a class with limited visibility.
+
+File validation and access is delegated to this class. 
+During file validation a FileFormat class is filled. This enforces that only files having the right 
+format are read and accepted.
+
+When initialized, the RecordManager refreshes the caches with data from the file. A method to refresh the cache
+is also provided. 
+
+4.5. DATAFACADE / DATAADAPTER
+
+The DataFacade interface provides the business methods that the gui needs at this stage. 
+The client needs to book, unbook, and search for records.
+The gui should not deal with locking and data consistency issues, 
+this is done inside of the DataFacade implementations.
+The DataFacade also has a "ping" method, which is a dummy which is called to ensure the object is
+available when working remotely.
+The DataAdapter is a local implementation of DataFacade. 
+
+5. REMOTE COMMUNICATION
+
+I chose to use RMI since it is more straightforward. To enforce my "one Data"  / "one Client" policy, I chose
+to have two remote object types : a RemoteDataFacade and a RemoteFacadePool. The RemoteDataFacade is the class
+that sits between the Gui and the Data, the RemoteFacadePool forwards the RemoteDataFacade instances to the client.
+
+
+5.1. REMOTEDATAFACADEIMPL / REMOTEDATAFACADE
+
+The RemoteDataFacadeImpl extends DataAdapter, but is a remote object. Some additional methods are provided for cleanup
+purposes. It is exported through UnicastRemoteObject.export, which is not  a problem since the class is stateless.
+I provide equals, hashCode and toString methods anyway.
+I chose to inherit from DataAdapter since a RemoteDataFacadeImpl "is" a DataAdapter. The interface RemoteDataFacade
+which is implemented just extends both DataFacade and Remote.
+When a RemoteDataFacadeImpl instance is dereferenced or released, the records which had been locked by its
+Data object and should have been unlocked, and were not, are unlocked.
+
+5.2. DATAREGISTRY
+
+The class DataRegistry is used by the server and creates the Remote objects  and binds them 
+to the Naming Server. The DataRegistry maintains references to all the RemoteDataFacadeImpl objects 
+which are created by it, in a map (Name --> Remote Object). Otherwise they would be released too soon,
+and I want them to exist during the client's lifecycle, and the client to release them.
+Timeout issues are solved client-side (in the DataFacadeBridge)
+
+There might be "orphan lock" if the client crashes before it is able to unlock, but this is unlikely
+since the lock / unlock sequence happens inside the same method in the server.
+ 
+Two kind of Remote Objects are created : RemoteDataFacadeImpl and RemoteFacadePoolImpl .  
+
+
+5.3. REMOTEDATAFACADEIMPL  METHODS
+
+The business methods which are exposed by the DataFacade  are 
+"remoteBookOperation(String customerNo, Record oldRecord)" 
+, "getRecordList(String hotelName, String cityName, boolean refresh)" and  "retrieveRecord(int recNo)"
+These methods are coded inside its parent DataAdapter, but are discussed here since its
+implementation is relevant in server mode.
+The remoteBookOperation performs the following operation 
+- lock record
+- read record
+- compare the current data with the old data (the data as it had been read before doing the booking)
+- if data has not been changed by someone else, perform the book / unbook operation,
+   otherwise throw an exception
+- unlock record (in finally block)
+
+The getRecordList method
+
+- creates a String[] instance that the find method can understand,
+- if the refresh flag is true, tells the RecordManager to reload data from the cache
+- retrieves an int[] with all the indexes that match the search  
+- Creates a collection containing all the records which have been found by the
+	search and returns it
+	
+	
+The retrieveRecord method builds a Record instance wrapping the data which is retrieved from the Data object
+about the occupancy found at position recNo in the file
+
+5.4. REMOTEFACADEPOOL
+
+The RemoteFacadePool is the other Remote object. It manages a pool of RemoteDataFacade object
+A client talks to the RemoteFacadePool on the server and tries to get a 
+RemoteDataFacadeImpl from its virtual pool. If none is available, a TooManyConnectionsException will 
+be thrown. 
+The client on closing notifies the RemoteFacadePool which will release the
+RemoteDataFacade instance which had been used by the client. 
+Another slot becomes then available in the pool and can be filled when a client requests it.
+The methods in RemoteFacadePool are synchronized, to make sure one instance
+of RemoteDataFacade is associated with just one client.
+The RemoteFacadePool uses a round robin algorithm to choose what name should be given to the RemoteDataFacadeImpl,
+looping from  DATAFACADE1 to DATAFACADE20. The name which are currently not available are saved in an
+ArrayList of Strings : unavailableRemoteObjectNames. 
+The RemoteFacadePool uses the DataRegistry static methods to create/bind and destroy/undbind
+ the Remote objects.
+
+
+6  CLIENT
+
+The suncertify.client package and subpackages contain the classes which are used by
+the client.  The main classes in the package suncertify.client is GuiController 
+(which works as a mediator between the view, the bridge to the DataFacade implementation and the model).
+RoomTableModel is the model containing the actual data about the occupancies. I put the model into the same package 
+as the controller since in my design the contoller is the only class which talks to the model.
+Also the actions are in this package. The actions know about the controller and use it to perform 
+the necessary operations.
+All operations are executed in the event thread since there are no time-intensive operations.
+
+6.1. DATAFACADEBRIDGE
+
+An instance of suncertify.client.DataFacadeBridge is passed as an argument to the GuiController. 
+DataFacadeBridge  hides the connection and the implementation details of DataFacade,
+so that the GuiController does not need to know if it is running locally or connecting remotely.
+It just asks the DataFacadeBridge to give him an instance of DataFacade. This instance contains
+all the business methods the GuiController needs to interact with the back end.
+The class will either create a local instance of DataFacade as a DataAdapter, or get a
+remote instance of RemoteDataFacade, implemented as a RemoteDataFacadeImpl,
+from the RemoteFacadePoolImpl remote object. 
+Timeout issues are also hidden from the controller.
+The getDataFacade method "pings" the DataFacade before using it and may have to ask the server to recreate
+it if it has timed out.
+
+6.2. MODEL
+
+suncertify.client.RoomTableModel is a TableModel implementation which knows about
+ the domain.  Every row in the table model is a Record instance, or occupancy. Methods are provided
+ to set and retrieve records.
+There are methods in the class to book and unbook a room, to check if the occupancy
+is in the future or if the room will be available in 48 hours and to retrieve a
+booking's customer.
+The usual information about the table model (column names, column types..) 
+is provided.
+There are also methods to retrieve all cities and hotels which can be used as search criteria.
+
+
+6.3. VIEW
+
+
+suncertify.client.view.View is the proxy to the View. View is implemented by
+suncertify.client.view.MainWindow. View exposes the methods that the controller 
+needs to interact with the user.
+Having View as an interface provides flexibility if the Gui ever needs to be reprogrammed.
+
+For simplicity all user interaction is possible in the main frame (no dialogs are used).
+
+MainWindow implements View as a JFrame with a Menu, a ToolBar, and four  panels.
+Two JSplitPanes are used to separate the panels.
+The MainWindow's constructor  is passed the following parameters :
+- The title 
+- The TableModel for the JTable
+- An ActionGroup instance, which contains the Actions and the Listener that have to be associated
+with the widgets inside MainWindow
+
+The TablePanel contains the JTable, containing all occupancy data from the RoomTableModel instance,
+inside a JScrollPane. It is on the right.
+The BookPanel allows the user to book (after typing a customer number in the textfield) or unbook the record 
+which is currently selected in the JTable . It is on the bottom left.
+
+FilterPanel allows the user to decide what rooms to show (filter criteria are city and hotel).
+Since searches are exact, search criteria are put into comboboxes. It is on the top left.
+
+There is also a StatusPanel which notifies the user about the result of the last operation. 
+
+The MainWindow also does not know about the implementation's details of the TableModel , the Actions and 
+the ListSelectionListener which are associated with its widgets. These are defined by the controller and 
+passed as arguments.
+
+6.4. ACTIONS AND ACTIONGROUP
+
+The ActionGroup class contains the Actions and the Listeners used by the application.
+The View implementation (MainWindow) is passed an instance of ActionGroup so that all the actions
+ inside of it can be associated with the widgets in the view. 
+The Action that are provided are : book , unbook, filter, show all, refresh, quit.
+There is one listener : when the selected row in the JTable changes.
+
+6.5. CONTROLLER 
+
+Suncertify.client.controller contains the GuiController class
+and the Actions and the Listeners. All actions and listeners have a reference
+to the controller.
+The GuiController has a reference to a DataFacadeBridge, to a View and to a
+RoomTableModel. When an event from the gui fires an action or a listener 
+in the package, a method in the GuiController is called.
+
+When initializing, the controller initializes the Actions and the Listener and puts them into an
+ActionGroup instance. The RoomTableModel is created and initialized with all the occupancies.
+The View is created and passed the ActionGroup and the RoomTableModel as arguments.
+The View comboboxes are then initialized. The method is called "init"
+
+When filtering, the controller reads the filter criteria from the View, retrieves
+the matching records from the DataFacadeBridge's DataFacade and updates the RoomTableModel.
+The method is called "RetrieveFiltered"
+
+When performing a booking operation the controller reads the customer number from the view,
+tries to book the room through the DataFacadeBridge's DataFacade after confirming with the user. 
+The user is then notified whether the booking is successful and the occupancy is refreshed.
+Same sequence when "Unbooking" the record. Unbooking is provided so that the user is able to undo an error.
+The methods are called "bookRecord" and "unbookRecord"
+
+The refresh command retrieves all data from the file.
+The method is called "reload". 
+
+When quitting, the controller notifies the DataFacadeBridge. 
+DataFacadeBridge, if connected remotely, notifies the server that it is disconnecting, so that
+the server is able to remove any orphan lock.
+The method is called "beforeQuit".
+
+
+
+6.6. 48 HOURS RULE
+
+The CSRs are supposed to book a room within 48 hours from midnight of the occupancy day .
+If they do that the booking / unbooking operation can be done without nags. Otherwise the CSR 
+will have to confirm before proceeding.
+This way the application can be tested even if there are no relevant occupancies in the file. 
+
+
+
+

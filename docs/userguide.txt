@@ -1,0 +1,75 @@
+USERGUIDE FOR URLyBIRD 1.3.3
+
+
+STARTING THE APPLICATION
+
+To start the application you need to type from the root directory
+
+java -jar runme.jar [<mode>] where mode can be "alone", "server" or empty
+
+First  a gui will open and prompt you for a filename (if in server or alone mode)
+or for the host you want to connect to.  After this step, 
+
+-If in server mode, the server will open the file you specified and start accepting connections from clients. 
+ You can read the messages from the server in the text field at the bottom , and
+ stop the server when you are done (using the "Stop" button or closing the window)
+ 
+-If running as a client, it will try to connect to machine you specified. If successful,
+ the main gui will appear. Otherwise you will be prompted for the host again
+
+-If running as a standalone, the specified file will be opened. You will work locally.
+ No connection to remote computers will be created.
+
+
+The property "hostName" and "filename" are remembered in the file "suncertify.properties"
+
+USER INTERFACE
+
+The user interface´s main window´s title reads "Connected to local database" if
+the program is running locally or "Connected to <host>" if the program is running
+remotely. 
+
+SCREEN LAYOUT
+
+The screen in the user interface is divided in three parts. On the right in a
+table the occupancies are shown. When the program is started all occupancies are shown.
+You can read data about every single available room : Hotel Name, City, Smoking 
+flag, Max Occupancy, Price Per Night, Date Available, Customer Number.
+You can select a row in the table but you can't edit data directly in the table.
+The user interface has a menu and a toolbar where the commands Filter, Show All,
+Book, Unbook, Quit and Refresh can be found. 
+
+SEARCHING
+
+On the top left panel filter criteria are shown. You can search rooms by hotel,
+city or both. To show the rooms that match only the criteria you chose in 
+the panel's comboboxes you have to click on the button "Filter". 
+ 
+SHOW ALL
+
+Click on the button Show All to make sure all rooms are shown. The filter panel
+comboboxes will be reset.
+
+BOOK & UNBOOK 
+
+On the bottom left panel you can book a room or undo the booking. After you 
+select a row in the table the book button is enabled if the room is still free,
+the unbook button is enabled if the room is already booked.
+The book / unbook operation is always allowed even if the room's available date
+is in the past or will not be available in the next 48 hours. If you try to
+perform such an operation on those rooms, however, you will be prompted before
+going to on to finalize the operation. To book you must type the customer number
+in the panel's customer textfield first.
+The operation will not be successful if there has been any concurrent change. 
+The record will be reloaded in this case.
+
+REFRESH 
+
+The refresh command makes sure the data is read directly from the file. 
+Cache is refreshed.
+
+QUIT
+
+Closing the window or choosing the quit menu item / button will make you disconnect and leave the application.
+
+
