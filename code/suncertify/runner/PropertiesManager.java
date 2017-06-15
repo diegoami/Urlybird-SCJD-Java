@@ -99,9 +99,9 @@ public class PropertiesManager {
                 InputStream is = new FileInputStream(file);
                 properties.load(is);
 
-                for (Enumeration enum = properties.keys();
-                        enum.hasMoreElements();) {
-                    String key = (String) enum.nextElement();
+                for (Enumeration enumeration = properties.keys();
+                     enumeration.hasMoreElements();) {
+                    String key = (String) enumeration.nextElement();
                     System.setProperty(key, (String) properties.get(key));
                 }
             } else {
